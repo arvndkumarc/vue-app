@@ -1,0 +1,122 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  Repository:
+    Type: String
+Resources:
+  IamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [codepipeline.amazonaws.com, codebuild.amazonaws.com, s3.amazonaws.com, cloudwatch.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: "/"
+      Policies:
+      - PolicyName: codepipeline-service
+        PolicyDocument:
+          Statement:
+          - Action:
+            - codebuild:*
+            Resource: "*"
+            Effect: Allow
+          - Action:
+            - s3:GetObject
+            - s3:GetObjectVersion
+            - s3:GetBucketVersioning
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: "*"
+            Effect: Allow
+          - Action:
+            - s3:ListObjects
+            - s3:GetObject
+            - s3:ListBucket
+            - s3:PutObject
+            Resource:
+            - arn:aws:s3:::mybucketstackpipeline
+            Effect: Allow
+          - Action:
+            - s3:*
+            - cloudformation:*
+            - iam:PassRole
+            Resource: "*"
+            Effect: Allow
+          Version: '2012-10-17'
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+        EncryptionDisabled: true
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/nodejs:10.14.1
+        Type: LINUX_CONTAINER
+      Name:
+        Ref: AWS::StackName
+      ServiceRole: !GetAtt IamRole.Arn
+      Source:
+        Type: CODEPIPELINE
+  s3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: mybucketstackpipeline
+      Tags:
+        - Key: Application Name
+          Value: VueApp
+        - Key: Company
+          Value: Otsiaws
+      # Path: "/"
+      # Policies:
+      #   - Policies
+  # CloudWatch:
+  #   Type: AWS::Logs::LogGroup
+  #   Properties:
+  #     RetentionInDays: 7
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !GetAtt IamRole.Arn
+      ArtifactStore:
+        Location: !Ref s3Bucket
+        Type: S3
+      Name: !Ref AWS::StackName
+      RestartExecutionOnUpdate: false
+      Stages:
+        - Actions:
+          - ActionTypeId:
+              Category: Source
+              Owner: ThirdParty
+              Provider: GitHub
+              Version: 1
+            Configuration:
+              Owner: arvndkumarc
+              Repo: singlepage-vue-app
+              PollForSourceChanges: false
+              Branch: master
+              OAuthToken: 09d2aa5013a65b69c3ea54d8a4e781e344bb1876
+            Name: Source
+            OutputArtifacts:
+              - Name: Source
+          Name: Source
+        - Actions:
+          - ActionTypeId:
+              Category: Build
+              Owner: AWS
+              Provider: CodeBuild
+              Version: 1
+            Configuration:
+              ProjectName: !Ref CodeBuildProject
+            InputArtifacts:
+              - Name: Source
+            Name: Build
+            OutputArtifacts:
+              - Name: Build
+          Name: Build
+      ArtifactStore:
+        Type: S3
+        Location: !Ref s3Bucket
